@@ -8,7 +8,7 @@ REGRID_PATH=/scratch/RTMA/alex.schein/Regridded_HRRR_aidatadepot
 
 cd ${HRRR_PATH}
 
-for yyyymmdd in "20210101" #* # FOR TESTING so it doesn't go too out of hand if things go wrong
+for yyyymmdd in * 
 do
 	cd ${yyyymmdd} #now working in /ai-datadepot/models/hrrr/conus/grib2/[yyyymmdd]
 	cwd_hrrr_yyyymmmdd=$PWD
@@ -24,20 +24,20 @@ do
                 tXXz=${tXXz%.*}
         
                 #Can't use same filename when regridding, hence have to split this up
-                newfilename1="temp.grib2"
-                newfilename2="hrrr_regridded_${yyyymmdd}_${tXXz}.grib2"
-                echo ${newfilename2}
+                tmpfilename="temp.grib2"
+                newfilename="hrrr_regridded_${yyyymmdd}_${tXXz}.grib2"
+                echo ${newfilename}
         
                 # This part assumes the filepath to [regrid directory]/[yyyymmdd] ALREADY EXISTS!
-        		if ! test -f ${REGRID_PATH}/${yyyymmdd}/${newfilename2}; then #hasn't been regridded yet - do it
+        		if ! test -f ${REGRID_PATH}/${yyyymmdd}/${newfilename}; then #hasn't been regridded yet - do it
                     # Extract 2 m temperature from main grib file, put it in the Regridded_HRRR_aidatadepot folder (no subfolder yet)
                     # This will then be regridded, and then overwritten by the next extracted 2m temp
-                    wgrib2 ${file} -match "TMP:2 m" -grib ${REGRID_PATH}/${newfilename1}
+                    wgrib2 ${file} -match "TMP:2 m" -grib ${REGRID_PATH}/${tmpfilename}
                 
-        			wgrib2 ${REGRID_PATH}/${newfilename1} -set_radius 1:6370000 -set_grib_type c3 -set_bitmap 0 -new_grid_winds grid -new_grid_interpolation bilinear -new_grid ncep grid 184 ${REGRID_PATH}/${yyyymmdd}/${newfilename2}
-        			echo "${REGRID_PATH}/${yyyymmdd}/${newfilename2} has been created"
+        			wgrib2 ${REGRID_PATH}/${tmpfilename} -set_radius 1:6370000 -set_grib_type c3 -set_bitmap 0 -new_grid_winds grid -new_grid_interpolation bilinear -new_grid ncep grid 184 ${REGRID_PATH}/${yyyymmdd}/${newfilename}
+        			echo "${REGRID_PATH}/${yyyymmdd}/${newfilename} has been created"
         		else
-        			echo "${REGRID_PATH}/${yyyymmdd}/${newfilename2} already exists in ${REGRID_PATH}/${yyyymmdd}"	
+        			echo "${newfilename} already exists in ${REGRID_PATH}/${yyyymmdd}"	
         		fi
             fi 
         fi 
@@ -47,4 +47,4 @@ do
     
 done #end main loop
 
-rm ${REGRID_PATH}/${newfilename1} #to not mess up future work
+rm ${REGRID_PATH}/${tmpfilename} #to not mess up future work
