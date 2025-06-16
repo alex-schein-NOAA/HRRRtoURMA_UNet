@@ -20,6 +20,7 @@ class HRRR_URMA_Dataset_AllTimes_AnyDates_AnyTerrains(Dataset):
                  is_train=True,
                  months=[1,12],  
                  hours="all", 
+                 forecast_lead_time = 0,
                  with_terrains=["hrrr","urma","diff"], 
                  with_yearly_time_sig = True, 
                  with_hourly_time_sig = True):
@@ -29,10 +30,13 @@ class HRRR_URMA_Dataset_AllTimes_AnyDates_AnyTerrains(Dataset):
         - months --> 2-tuple of ints 1-12; first entry = start month, second entry = end month. 
             - Note this means only a continuous range of months can be selected, and all days in those months will be selected
             - Note also this means only dates WITHIN a year can be selected - cross-year selection currently not allowed (causes issues with the fact we don't have 2020 data, so any cross-year times in the training set can only contain 2years - and we don't have any non-2024 data in the testing set...)
-            if is_train=True, all years 2021/22/23 will have data selected from this range
-            if is_train=False, only 2024 data will be selected
-        hours --> either str of "all" to include all times, or a subset of list of ints [0,1,..23]. Selects valid hours to include.
-            Can be discontinuous, but almost certainly won't be (why bother?)
+            - if is_train=True, all years 2021/22/23 will have data selected from this range
+            - if is_train=False, only 2024 data will be selected
+        - hours --> either str of "all" to include all times, or a subset of list of ints [0,1,..23]. Selects valid hours to include.
+            - Can be discontinuous, but almost certainly won't be (why bother?)
+        - forecast_lead_time --> int from 0 to 23, specifying HRRR forecast lead time
+            - Only used when loading the data - HRRR files need to have forecast lead time specified in the filename
+            - URMA not affected by this
         with_terrains --> list of terrains to include as separate, normalized channels (can be empty to not include terrain):
             "hrrr" --> include NORMALIZED 2.5 km downscaled HRRR terrain field as a separate channel
             "urma" --> include NORMALIZED 2.5 km nam_smarttopconus2p5 terrain field as a separate channel
@@ -71,11 +75,11 @@ class HRRR_URMA_Dataset_AllTimes_AnyDates_AnyTerrains(Dataset):
         terrain_path_hrrr = os.path.join(path_root, "Terrain_Maps", "terrain_subset_HRRR_2p5km.nc")
         terrain_path_urma = os.path.join(path_root, "Terrain_Maps", "terrain_subset_namsmarttopconus2p5.nc")
         if is_train:
-            data_save_path_pred = os.path.join(path_root,"Regridded_HRRR_train_test", "train_hrrr_alltimes.nc")
-            data_save_path_targ = os.path.join(path_root,"URMA_train_test", "train_urma_alltimes.nc")
+            data_save_path_pred = os.path.join(path_root,"Regridded_HRRR_train_test", f"train_hrrr_alltimes_f{str(forecast_lead_time).zfill(2)}.nc")
+            data_save_path_targ = os.path.join(path_root,"URMA_train_test", f"train_urma_alltimes.nc")
         else:
-            data_save_path_pred = os.path.join(path_root,"Regridded_HRRR_train_test", "test_hrrr_alltimes.nc")
-            data_save_path_targ = os.path.join(path_root,"URMA_train_test", "test_urma_alltimes.nc")
+            data_save_path_pred = os.path.join(path_root,"Regridded_HRRR_train_test", f"test_hrrr_alltimes_f{str(forecast_lead_time).zfill(2)}.nc")
+            data_save_path_targ = os.path.join(path_root,"URMA_train_test", f"test_urma_alltimes.nc")
 
         #########################################
         ## Open xarray dataarrays
@@ -99,6 +103,7 @@ class HRRR_URMA_Dataset_AllTimes_AnyDates_AnyTerrains(Dataset):
         # Returns an xarray dataset where the first entry is the first instance of data at self.hours[0], second entry is the first instance of data at self.hours[1], and so on; every len(self.hours) it wraps around to the next date's data
         # Builds a list of the sample idxs fulfilling the month and hour conditions, then subsets the dataarrays (again, currently not subsetting days within a month, i.e. if a month is included, all its days are too) 
         # List is only made over predictor times/indices, but these must necessarily match with the target's, so it shouldn't be an issue
+        # !!!! SELECTS BASED ON valid_time I.E. THE ACTUAL TIME WE CARE ABOUT - so make sure any file with forecast lead time gets this correct, and the valid_time coordinate actually lines up with the right time! So the first valid_time in the training set should be 2021-01-01 00 UTC, etc
         
         does_date_fulfill_conditions = []
         for i, date in enumerate(self.xr_dataset_pred.valid_time.data):
@@ -130,7 +135,6 @@ class HRRR_URMA_Dataset_AllTimes_AnyDates_AnyTerrains(Dataset):
             year_str = "Year = 2024"
         
         # For speed purposes, worth preloading all data as it's considerably faster than loading each hour in the below loop
-        # !!!!!!!! (6/9) URMA loading is still very slow for non-continuous months! NEED TO FIGURE OUT WHY
         print(f"Loading predictor dataset ({year_str}, months = {self.months[0]} to {self.months[1]}, hours = {self.hours})")
         start = time.time()
         tmp_dataset_pred_data = self.xr_dataset_pred.data
