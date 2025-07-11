@@ -17,7 +17,7 @@ var_select_dict = {"t2m":r"TMP:2 m",
                    "u10m":r"UGRD:10 m",
                    "v10m":r"VGRD:10 m"}
     
-for var_string in list(var_select_dict.keys())[1:3]: #list(var_select_dict.keys()): #(6/25) doing d2m, pressurf
+for var_string in list(var_select_dict.keys())[3:]: #list(var_select_dict.keys()): #(7/2) doing u10m, v10m
     PATH_HRRR_TRAIN = f"/data1/projects/RTMA/alex.schein/Regridded_HRRR_train_test/LOOSE_FILES/train_spatiallyrestricted_f01/{var_string}"
     PATH_HRRR_TEST = f"/data1/projects/RTMA/alex.schein/Regridded_HRRR_train_test/LOOSE_FILES/test_spatiallyrestricted_f01/{var_string}"
     
@@ -32,7 +32,7 @@ for var_string in list(var_select_dict.keys())[1:3]: #list(var_select_dict.keys(
         ds0 = xr.open_dataset(input_files[0], decode_timedelta=True)
         for i, filepath in enumerate(input_files):
             ds1 = xr.open_dataset(filepath, decode_timedelta=True)
-            if i % (int(len(input_files)/50))==0:
+            if i % (int(len(input_files)/100))==0:
                 print(f"{i}/{len(input_files)} files checked")
             if list(ds0.coords) != list(ds1.coords):
                 print(f"Failure in {filepath}")
@@ -59,7 +59,7 @@ for var_string in list(var_select_dict.keys())[1:3]: #list(var_select_dict.keys(
                     ds0 = xr.concat([ds0,ds1], dim="valid_time_dim")
                     if i % (int(len(trunc_input_files)/100))==0:
                         print(f"{i}/{len(trunc_input_files)} concatenated")
-                        with open(f"/scratch/RTMA/alex.schein/LOG_{var_string}_HRRR_concat_20250624.txt", "a") as file: 
+                        with open(f"/scratch/RTMA/alex.schein/LOG_u10m_v10m_HRRR_concat_20250702.txt", "a") as file: ##### CHANGE THIS FILEPATH AS NEEDED
                           file.write(f"{var_string} | {i}/{len(trunc_input_files)} concatenated \n")
     
                     
@@ -67,7 +67,8 @@ for var_string in list(var_select_dict.keys())[1:3]: #list(var_select_dict.keys(
                 ds_concat = ds_concat.swap_dims(dims_dict={"valid_time_dim":"sample_idx"})
             
                 ds_concat.to_netcdf(output_filepath)
-                print(f"{output_filepath} written to disk")
+                with open(f"/scratch/RTMA/alex.schein/LOG_u10m_v10m_HRRR_concat_20250702.txt", "a") as file: ##### CHANGE THIS FILEPATH AS NEEDED
+                    file.write(f"{output_filepath} written to disk \n")
     
         return
     
@@ -94,9 +95,9 @@ for var_string in list(var_select_dict.keys())[1:3]: #list(var_select_dict.keys(
     #     print(f"{path_test_urma} already exists")
         
     ## Run this before doing concatenation, if doing many vars at once, so any errors can be caught before investing a lot of time
-    # print(f"Checking {var_string}")
-    # check_files_for_problems(files_train_hrrr)
-    # check_files_for_problems(files_test_hrrr)
+#    print(f"Checking {var_string}")
+#    check_files_for_problems(files_train_hrrr)
+#    check_files_for_problems(files_test_hrrr)
     
     if not os.path.exists(output_path_train_hrrr):
       concat_netcdfs(files_train_hrrr, output_path_train_hrrr)

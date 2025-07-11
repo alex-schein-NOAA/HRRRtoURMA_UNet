@@ -28,22 +28,23 @@ NUM_EPOCHS = 1000 #only training 2 models this time, so probably ok to go a litt
 
 ################################################################################
 
-while not os.path.exists(f"/data1/projects/RTMA/alex.schein/Regridded_HRRR_train_test/train_hrrr_alltimes_t2m_f01.nc"):
-    print("File doesn't exist yet. Sleeping for 10 seconds")
-    time.sleep(10)
+# while not os.path.exists(f"/data1/projects/RTMA/alex.schein/Regridded_HRRR_train_test/train_hrrr_alltimes_t2m_f01.nc"):
+#     print("File doesn't exist yet. Sleeping for 10 seconds")
+#     time.sleep(10)
     
 
-if os.path.exists(f"/data1/projects/RTMA/alex.schein/Regridded_HRRR_train_test/train_hrrr_alltimes_t2m_f01.nc"):
-    for TERRAIN_LIST in [["diff"]]: #["hrrr","urma","diff"]
-        W_HRRR_TERR = 0
-        W_URMA_TERR = 0
-        if "hrrr" in TERRAIN_LIST:
-            W_HRRR_TERR=1
-        if "urma" in TERRAIN_LIST:
-            W_URMA_TERR=1
+for TERRAIN_LIST in [["diff"]]: #["hrrr","urma","diff"]
+    W_HRRR_TERR = 0
+    W_URMA_TERR = 0
+    if "hrrr" in TERRAIN_LIST:
+        W_HRRR_TERR=1
+    if "urma" in TERRAIN_LIST:
+        W_URMA_TERR=1
+
     
-        for W_SIG_YR, W_SIG_HR in [[True,True],[False,False]]:
-            savename = f"UNSim_BS{int(BATCH_SIZE/NUM_GPUS_TO_USE)}_NE{NUM_EPOCHS}_months1-12_tHRRR{int(W_HRRR_TERR)}_tURMA{int(W_URMA_TERR)}_tDIFF1_sigYr{int(W_SIG_YR)}_sigHr{int(W_SIG_HR)}"
+    for W_SIG_YR, W_SIG_HR in [[True,True]]: #,[False,False]]:
+        for TIME_SIG_SCHEME in ["Direct", "Frac"]:
+            savename = f"UNSim_BS{int(BATCH_SIZE/NUM_GPUS_TO_USE)}_NE{NUM_EPOCHS}_tH{int(W_HRRR_TERR)}_tU{int(W_URMA_TERR)}_tD1_sigScheme{TIME_SIG_SCHEME}_sigYr{int(W_SIG_YR)}_sigHr{int(W_SIG_HR)}"
             if not os.path.exists(f"/scratch/RTMA/alex.schein/hrrr_CNN_testing/Trained models/{savename}.pt"):
                 appendation = ""
             else: #model under that name already exists
@@ -63,7 +64,8 @@ if os.path.exists(f"/data1/projects/RTMA/alex.schein/Regridded_HRRR_train_test/t
                                           normalization_scheme="all times",
                                           with_terrains=TERRAIN_LIST, 
                                           with_yearly_time_sig=W_SIG_YR, 
-                                          with_hourly_time_sig=W_SIG_HR)
+                                          with_hourly_time_sig=W_SIG_HR,
+                                          time_sig_scheme=TIME_SIG_SCHEME)
         
             train_dataloader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True, num_workers=4*NUM_GPUS_TO_USE, pin_memory=True)
             with open("/scratch/RTMA/alex.schein/hrrr_CNN_testing/training_log.txt", "a") as file: 
@@ -79,7 +81,6 @@ if os.path.exists(f"/data1/projects/RTMA/alex.schein/Regridded_HRRR_train_test/t
             optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, betas=[0.5,0.999]) #torch.optim.Adam(model.parameters(), lr = 1e-3)
             loss_function = torch.nn.L1Loss()
         
-            log_epoch_interval = 50
             lowest_loss = 999
             
             model.train()
@@ -121,10 +122,4 @@ if os.path.exists(f"/data1/projects/RTMA/alex.schein/Regridded_HRRR_train_test/t
                 
             os.rename(f"/scratch/RTMA/alex.schein/hrrr_CNN_testing/Trained models/{savename}{appendation}_TEMP.pt", 
                       f"/scratch/RTMA/alex.schein/hrrr_CNN_testing/Trained models/{savename}{appendation}.pt") #so if training is interrupted, previously saved model under the same name isn't wiped out
-
-
-
-
-
-
             

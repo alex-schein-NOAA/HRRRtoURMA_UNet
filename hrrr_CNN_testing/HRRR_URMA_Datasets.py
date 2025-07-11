@@ -24,7 +24,8 @@ class HRRR_URMA_Dataset(Dataset):
                  normalization_scheme = "per hour",
                  with_terrains=["hrrr","urma","diff"], 
                  with_yearly_time_sig = True, 
-                 with_hourly_time_sig = True):
+                 with_hourly_time_sig = True,
+                 time_sig_scheme = "frac"):
         
         """
         - is_train --> bool to load either training or testing datasets
@@ -46,8 +47,11 @@ class HRRR_URMA_Dataset(Dataset):
             - "urma" --> include NORMALIZED 2.5 km nam_smarttopconus2p5 terrain field as a separate channel
             - "diff" --> include NORMALIZED map of the difference between HRRR and URMA terrain as a separate channel
             - !!!! NOTE: if both "hrrr" and "urma" are included, then HRRR terrain field will be normalized with respect to the mean/stddev of the URMA terrain!
-        - with_yearly_time_sig --> bool to include yearly time signatures. Sinusoidal as of 6/24
-        - with_hourly_time_sig --> bool to include time-of-day signatures. Sinusoidal as of 6/24
+        - with_yearly_time_sig --> bool to include yearly time signatures. Changed from sinusoidal to linear as of 7/7
+        - with_hourly_time_sig --> bool to include time-of-day signatures. Changed from sinusoidal to linear as of 7/7
+        - time_sig_scheme = str to control what scheme to use
+            - "direct" --> use integer indices, e.g. 1,2,...,365 for day of year, and 0,1,...,23 for hour of day
+            - "frac" --> use proportional indices, e.g. n/365 for nth day of year, m/23 for hour of day (note use of 23 instead of 24 to get 0 and 1 included)
         """
 
         #########################################
@@ -81,6 +85,7 @@ class HRRR_URMA_Dataset(Dataset):
         
         self.with_yearly_time_sig = with_yearly_time_sig
         self.with_hourly_time_sig = with_hourly_time_sig
+        self.time_sig_scheme = time_sig_scheme.lower() #will likely be calling this with capitalized "Direct" or "Frac" but don't want this in below code, so enforce lowercase
         
         #########################################
         ## Establish paths
@@ -91,7 +96,7 @@ class HRRR_URMA_Dataset(Dataset):
         path_root = "/data1/projects/RTMA/alex.schein" #os.path.dirname(os.getcwd())
         terrain_path_hrrr = os.path.join(path_root, "Terrain_Maps", "terrain_subset_HRRR_2p5km.nc")
         terrain_path_urma = os.path.join(path_root, "Terrain_Maps", "terrain_subset_namsmarttopconus2p5.nc")
-        if is_train:
+        if self.is_train:
             data_save_path_pred = os.path.join(path_root,"Regridded_HRRR_train_test", f"train_hrrr_alltimes_t2m_f{str(forecast_lead_time).zfill(2)}.nc")#_{RADIUS}.nc")
             data_save_path_targ = os.path.join(path_root,"URMA_train_test", f"train_urma_alltimes_t2m.nc")
         else:
@@ -150,7 +155,7 @@ class HRRR_URMA_Dataset(Dataset):
         self.dataset_pred_normed_stddevs = []
         self.dataset_targ_normed_stddevs = []
 
-        if is_train:
+        if self.is_train:
             year_str = "Years = 2021/22/23"
         else:
             year_str = "Year = 2024"
@@ -167,7 +172,7 @@ class HRRR_URMA_Dataset(Dataset):
         print(f"Target dataset data loaded. Time taken = {(time.time()- start):.1f} sec")
         
         # Once the data is in memory, calculation is fast
-        if normalization_scheme == "per hour":
+        if self.normalization_scheme == "per hour":
             for i, hr in enumerate(self.hours):
                 #This indexing method is fast BUT relies on perfect data ordering in the non-normalized set! So input must conform to prior dataset description
                 tmp_data, tmp_mean, tmp_stddev = self.normalize_one_hour(tmp_dataset_pred_data[i::len(self.hours)]) 
@@ -215,28 +220,49 @@ class HRRR_URMA_Dataset(Dataset):
 
         # Make sin/cos waves for date encoding
         # Takes number of days since start of current year, casts as a fraction of the current year, takes sin/cos
-        # Only done for pred; targ necessarily must have the same times but this is not intended for use as a target player, only additional info in the prediction
-        if with_yearly_time_sig:
-            self.date_sin_list = []
-            self.date_cos_list = []
+        # Only done for pred; targ necessarily must have the same times but this is not intended for use as a target function, only additional info in the prediction
+        # (7/7) Updated to linear signature instead
+        if self.with_yearly_time_sig:
+            # self.date_sin_list = []
+            # self.date_cos_list = []
+            # for date in self.xr_dataset_pred.valid_time.data:
+            #     dt_current = dt.datetime.strptime(str(np.datetime_as_string(date, unit='s')), "%Y-%m-%dT%H:%M:%S")
+            #     dt_delta = dt_current - dt.datetime(dt_current.year, 1, 1) #no need for +1 here as it should start at 0
+            #     numdays_currentyear = (dt.datetime(dt_current.year+1, 1,1) - dt.datetime(dt_current.year, 1, 1)).days #the difference between jan 1 and dec 31 of the same year is reported as 364 (non-leap year) while year-to-year jan 1 is actually correct. This only exists to handle leap years (of which 2024 is one!)
+            #     self.date_sin_list.append(np.sin(2*np.pi*(dt_delta.days / numdays_currentyear)))
+            #     self.date_cos_list.append(np.cos(2*np.pi*(dt_delta.days / numdays_currentyear)))
+            self.date_linear_frac_list = []
+            self.date_linear_direct_list = []
             for date in self.xr_dataset_pred.valid_time.data:
                 dt_current = dt.datetime.strptime(str(np.datetime_as_string(date, unit='s')), "%Y-%m-%dT%H:%M:%S")
-                dt_delta = dt_current - dt.datetime(dt_current.year, 1, 1) #no need for +1 here as it should start at 0
-                numdays_currentyear = (dt.datetime(dt_current.year+1, 1,1) - dt.datetime(dt_current.year, 1, 1)).days #the difference between jan 1 and dec 31 of the same year is reported as 364 (non-leap year) while year-to-year jan 1 is actually correct. This only exists to handle leap years (of which 2024 is one!)
-                self.date_sin_list.append(np.sin(2*np.pi*(dt_delta.days / numdays_currentyear)))
-                self.date_cos_list.append(np.cos(2*np.pi*(dt_delta.days / numdays_currentyear)))
+                dt_delta = dt_current - dt.datetime(dt_current.year, 1, 1) 
+                numdays_currentyear = (dt.datetime(dt_current.year+1, 1,1) - dt.datetime(dt_current.year, 1, 1)).days 
+                
+                # +1 to use 1-365 encoding instead of 0-364; probably doesn't matter but w/e
+                self.date_linear_frac_list.append((dt_delta.days+1)/numdays_currentyear) 
+                self.date_linear_direct_list.append(dt_delta.days+1)
+            
             print("Yearly time signatures done")
 
 
         # Make sin/cos waves for hour encoding
         # Just takes current hour, casts as a fraction of 24h day, takes sin/cos
-        if with_hourly_time_sig:
-            self.hour_sin_list = []
-            self.hour_cos_list = []
+        # (7/7) Updated to linear signature instead
+        if self.with_hourly_time_sig:
+            # self.hour_sin_list = []
+            # self.hour_cos_list = []
+            # for date in self.xr_dataset_pred.valid_time.data:
+            #     dt_current = dt.datetime.strptime(str(np.datetime_as_string(date, unit='s')), "%Y-%m-%dT%H:%M:%S")
+            #     self.hour_sin_list.append(np.sin(2*np.pi*(dt_current.hour / 24)))
+            #     self.hour_cos_list.append(np.cos(2*np.pi*(dt_current.hour / 24)))
+            self.hour_linear_frac_list = []
+            self.hour_linear_direct_list = []
             for date in self.xr_dataset_pred.valid_time.data:
                 dt_current = dt.datetime.strptime(str(np.datetime_as_string(date, unit='s')), "%Y-%m-%dT%H:%M:%S")
-                self.hour_sin_list.append(np.sin(2*np.pi*(dt_current.hour / 24)))
-                self.hour_cos_list.append(np.cos(2*np.pi*(dt_current.hour / 24)))
+                # No +1 here; want to retain 0-23 indexing
+                self.hour_linear_frac_list.append((dt_current.hour)/23) #using 23 so the full 0-1 range is covered
+                self.hour_linear_direct_list.append(dt_current.hour)
+            
             print("Hourly time signatures done")
         
         self.predictor_indices = self.xr_dataset_pred.sample_idx.data
@@ -313,13 +339,24 @@ class HRRR_URMA_Dataset(Dataset):
             predictor = np.concatenate((predictor, self.terrain_diff_normed[np.newaxis,:,:]), axis=0)
     
         ## Add time signature layers as new channels
+        # (7/7) updated to linear signatures - note this changes the # of channels, so other code will have to be updated to match this change
         if self.with_yearly_time_sig:
-            date_sin_layer = (self.date_sin_list[idx]*np.ones(np.shape(self.dataset_pred_normed[idx])))[np.newaxis,:,:]
-            date_cos_layer = (self.date_cos_list[idx]*np.ones(np.shape(self.dataset_pred_normed[idx])))[np.newaxis,:,:]
-            predictor = np.concatenate((predictor, date_sin_layer, date_cos_layer), axis=0)
+            # date_sin_layer = (self.date_sin_list[idx]*np.ones(np.shape(self.dataset_pred_normed[idx])))[np.newaxis,:,:]
+            # date_cos_layer = (self.date_cos_list[idx]*np.ones(np.shape(self.dataset_pred_normed[idx])))[np.newaxis,:,:]
+            # predictor = np.concatenate((predictor, date_sin_layer, date_cos_layer), axis=0)
+            if self.time_sig_scheme == "direct":
+                date_layer = (self.date_linear_direct_list[idx]*np.ones(np.shape(self.dataset_pred_normed[idx])))[np.newaxis,:,:]
+            elif self.time_sig_scheme == "frac":
+                date_layer = (self.date_linear_frac_list[idx]*np.ones(np.shape(self.dataset_pred_normed[idx])))[np.newaxis,:,:]
+            predictor = np.concatenate((predictor, date_layer), axis=0)
         if self.with_hourly_time_sig:
-            hour_sin_layer = (self.hour_sin_list[idx]*np.ones(np.shape(self.dataset_pred_normed[idx])))[np.newaxis,:,:]
-            hour_cos_layer = (self.hour_cos_list[idx]*np.ones(np.shape(self.dataset_pred_normed[idx])))[np.newaxis,:,:]
-            predictor = np.concatenate((predictor, hour_sin_layer, hour_cos_layer), axis=0)
+            # hour_sin_layer = (self.hour_sin_list[idx]*np.ones(np.shape(self.dataset_pred_normed[idx])))[np.newaxis,:,:]
+            # hour_cos_layer = (self.hour_cos_list[idx]*np.ones(np.shape(self.dataset_pred_normed[idx])))[np.newaxis,:,:]
+            # predictor = np.concatenate((predictor, hour_sin_layer, hour_cos_layer), axis=0)
+            if self.time_sig_scheme == "direct":
+                hour_layer = (self.hour_linear_direct_list[idx]*np.ones(np.shape(self.dataset_pred_normed[idx])))[np.newaxis,:,:]
+            elif self.time_sig_scheme == "frac":
+                hour_layer = (self.hour_linear_frac_list[idx]*np.ones(np.shape(self.dataset_pred_normed[idx])))[np.newaxis,:,:]
+            predictor = np.concatenate((predictor, hour_layer), axis=0)
      
         return (predictor), (target)

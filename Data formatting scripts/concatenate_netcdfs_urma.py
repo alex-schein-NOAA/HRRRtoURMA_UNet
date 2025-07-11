@@ -85,21 +85,20 @@ for var_string in list(var_select_dict.keys())[1:]: #list(var_select_dict.keys()
     output_path_test_urma = f"/data1/projects/RTMA/alex.schein/URMA_train_test/test_urma_alltimes_{var_string}.nc"
     
     
-    
     ## Run this before doing concatenation, if doing many vars at once, so any errors can be caught before investing a lot of time
-    print(f"Checking {var_string}")
-    check_files_for_problems(files_train_urma)
-    check_files_for_problems(files_test_urma)
+#    print(f"Checking {var_string}")
+#    check_files_for_problems(files_train_urma)
+#    check_files_for_problems(files_test_urma)
     
-    # if not os.path.exists(path_train_urma):
-    #     concat_netcdfs(files_train_urma, path_train_urma)
-    # else:
-    #     print(f"{path_train_urma} already exists")
+    if not os.path.exists(output_path_train_urma):
+       concat_netcdfs(files_train_urma, output_path_train_urma)
+    else:
+       print(f"{path_train_urma} already exists")
     
-    # if not os.path.exists(path_test_urma):
-    #     concat_netcdfs(files_test_urma, path_test_urma)
-    # else:
-    #     print(f"{path_test_urma} already exists")
+    if not os.path.exists(output_path_test_urma):
+       concat_netcdfs(files_test_urma, output_path_test_urma)
+    else:
+       print(f"{path_test_urma} already exists")
         
     
     

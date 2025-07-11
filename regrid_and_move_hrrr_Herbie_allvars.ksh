@@ -1,6 +1,6 @@
 #!/bin/bash
 
-declare -a VARS=("u10m" "v10m") #"d2m" "pressurf" "t2m") #(6/25) Need to redo u and v
+declare -a VARS=("u10m" "v10m") #"d2m" "pressurf" "t2m") #(7/1) Redoing U and V
 
 for VAR_OF_INTEREST in "${VARS[@]}"
 do
@@ -16,7 +16,7 @@ do
     do
     	cd ${yyyymmdd} #now working in Herbie_downloads/${VAR_OF_INTEREST}/hrrr/[yyyymmmdd]
     	cwd_hrrr_yyyymmmdd=$PWD
-    	echo ${yyyymmdd}
+    	#echo ${yyyymmdd}
     
         for file in *; do
             if [[ ! "${file}" == *"idx" ]]; then #make sure it's not trying to do anything with the index files, if they exist
@@ -31,7 +31,7 @@ do
         
                 # This part assumes the filepath to [regrid directory]/[yyyymmdd] ALREADY EXISTS!
 				if ! test -f ${REGRID_PATH}/${yyyymmdd}/${newfilename}; then #hasn't been regridded yet - do it
-					wgrib2 ${file} -set_radius 1:6371950 -set_grib_type c3 -set_bitmap 0 -new_grid_winds grid -new_grid_interpolation bilinear -new_grid ncep grid 184 ${newfilename}
+					wgrib2 ${file} -set_radius 1:6371200 -set_grib_type c3 -set_bitmap 0 -new_grid_winds grid -new_grid_vectors none -new_grid_interpolation bilinear -new_grid "lambert:265:25.0:25.0 238.445999:2145:2539.703 20.191999:1377:2539.703" ${newfilename}
 					echo "${newfilename} has been created"
 		
 					# cd ../../.. #go up to aschein
@@ -39,7 +39,8 @@ do
 					echo "${newfilename} has been moved to ${REGRID_PATH}/${yyyymmdd}/"
 					cd ${cwd_hrrr_yyyymmmdd} #return to Herbie_downloads/hrrr/yyyymmdd
 				else
-					echo "${newfilename} already exists in ${REGRID_PATH}/${yyyymmdd}"	
+					foo=1
+          #echo "${newfilename} already exists in ${REGRID_PATH}/${yyyymmdd}"	
 				fi
             fi  
         done #end working in in Herbie_downloads/${VAR_OF_INTEREST}/hrrr/[yyyymmmdd]
