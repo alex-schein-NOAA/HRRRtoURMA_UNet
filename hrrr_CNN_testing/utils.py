@@ -20,7 +20,7 @@ import cartopy.feature as cfeature
 ####################################################################
 
 def plot_prediction(X, pred, y, date_str="DATE", savename="MODEL_NAME", to_save=False):
-    #X,y,pred = input data, truth, prediction respectively, as numpy arrays
+    #X,pred,y = input data, prediction, truth respectively, as numpy arrays
     fig, axes = plt.subplots(1,4, figsize=(20,5))
     maxtemp = np.max([np.max(X.squeeze()), np.max(y.squeeze()), np.max(pred.squeeze())])
     mintemp = np.min([np.min(X.squeeze()), np.min(y.squeeze()), np.min(pred.squeeze())])

@@ -57,7 +57,7 @@ for i in range(len(TARGET_VAR_LIST)):
         file.write(f"Data loaded | Current time = {current_time} \n")
     
 
-    model = SR_UNet_simple(n_channels_in=current_model.num_channels_in)
+    model = SR_UNet_simple(n_channels_in=current_model.num_channels_in, n_channels_out=current_model.num_channels_out)
     device = torch.device("cuda")
     model = nn.DataParallel(model, device_ids=[i for i in range(NUM_GPUS_TO_USE)])
     model.to(device)

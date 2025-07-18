@@ -305,7 +305,9 @@ class HRRR_URMA_Dataset_AllVars(Dataset):
         else:
             pred_targ_str = "target"
 
-        print(f"Loading {pred_targ_str} dataset for {var_name} ({year_str}, months = {self.months[0]} to {self.months[1]}, hours = {self.hours})")
+        print_hours = ("all" if self.hours==[i for i in range(24)] else self.hours)
+        
+        print(f"Loading {pred_targ_str} dataset for {var_name} ({year_str}, months = {self.months[0]} to {self.months[1]}, hours = {print_hours})")
         start = time.time()
         tmp_dataset_data = xr_dataset.data
         print(f"{pred_targ_str.capitalize()} dataset data loaded. Time taken = {(time.time()- start):.1f} sec")
@@ -338,7 +340,7 @@ class HRRR_URMA_Dataset_AllVars(Dataset):
         predictor = self.datasets_pred_normed[0][idx][np.newaxis,:,:]
         target = self.datasets_targ_normed[0][idx][np.newaxis,:,:]
 
-        ## Now add as new channels as many variables as we have
+        ## Add new channels for as many variables as we have
         # Do need to do a check for degenerate case of variable list being 1 entry, as this might very well be the case, especially for target
         if len(self.predictor_vars) > 1:
             for i, var_name in enumerate(self.predictor_vars[1:]): #don't double up on index 0
@@ -363,5 +365,6 @@ class HRRR_URMA_Dataset_AllVars(Dataset):
         if self.with_hourly_time_sig:
             hour_layer = (self.hour_linear_frac_list[idx]*np.ones(np.shape(self.datasets_pred_normed[0][idx])))[np.newaxis,:,:]
             predictor = np.concatenate((predictor, hour_layer), axis=0)
+
         
         return (predictor), (target)

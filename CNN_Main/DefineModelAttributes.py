@@ -17,6 +17,9 @@ from HRRR_URMA_Datasets_AllVars import *
 ######################################################################################################################################################
 
 class DefineModelAttributes():
+    """
+    Class to aid in constructing models and their Pytorch datasets for use in training. Must set an object of this class whose attributes can then be used to initialized and control model training.
+    """
     def __init__(self,
                  BATCH_SIZE=256,
                  NUM_EPOCHS=1000,
@@ -30,11 +33,10 @@ class DefineModelAttributes():
                  with_hourly_time_sig=False,
                  predictor_vars=["t2m", "d2m", "pressurf", "u10m", "v10m"],
                  target_vars=["t2m", "d2m", "pressurf", "u10m", "v10m"]):
+            ####
+            # See HRRR_URMA_Datasets_AllVars.py for variable definitions/restrictions
+            ####
         
-        """
-            See HRRR_URMA_Datasets_AllVars for variable definitions/restrictions
-        """
-
         #########################################
     
         self.BATCH_SIZE = BATCH_SIZE
@@ -52,13 +54,29 @@ class DefineModelAttributes():
 
         self.savename = self.create_save_name()
 
-        self.dataset = None #call create_dataset() in desired function
+        self.dataset = None #call create_dataset() in whatever calling function needs it
         self.num_channels_in = None
         
     ######################################### FUNCTIONS #########################################
     
     def create_save_name(self):
-        
+        """
+        Savename is additive, i.e. only includes attributes present in the model
+        Ordering: 
+            - Batch size (BS#)
+            - Num epochs (NE#)
+            - Months IF NOT 1-12
+            - Hours IF NOT all
+            - Forecast lead time IF NOT 1
+            - Normalization scheme IF NOT all times
+            - Terrains (tH, tU, tD)
+            - Yearly/hourly time sigs (sY, sH)
+            - Predictor variables, in parentheses, separated by dashes
+                Example: pred(t2m-d2m-u10m)
+            - Target variables, in parentheses, separated by dashes
+                Example: targ(t2m-pressurf)
+
+        """
         ## Define all optional/constructive arguments
         month_str = ""
         hours_str = ""
@@ -98,18 +116,24 @@ class DefineModelAttributes():
     def create_dataset(self):
         # Creates the requisite Dataset for use in Pytorch Dataloader
         # NOT called by default (due to calculation expense) - must be invoked by calling function 
-        self.dataset = HRRR_URMA_Dataset_AllVars(is_train = self.is_train,
-                                                 months = self.months,  
-                                                 hours = self.hours, 
-                                                 forecast_lead_time = self.forecast_lead_time, 
-                                                 normalization_scheme = self.normalization_scheme,
-                                                 with_terrains = self.with_terrains, 
-                                                 with_yearly_time_sig = self.with_yearly_time_sig, 
-                                                 with_hourly_time_sig = self.with_hourly_time_sig,
-                                                 predictor_vars = self.predictor_vars,
-                                                 target_vars = self.target_vars)
 
+        # Check if this was already done, to save duplicate computation
+        if self.dataset is None:
+            self.dataset = HRRR_URMA_Dataset_AllVars(is_train = self.is_train,
+                                                     months = self.months,  
+                                                     hours = self.hours, 
+                                                     forecast_lead_time = self.forecast_lead_time, 
+                                                     normalization_scheme = self.normalization_scheme,
+                                                     with_terrains = self.with_terrains, 
+                                                     with_yearly_time_sig = self.with_yearly_time_sig, 
+                                                     with_hourly_time_sig = self.with_hourly_time_sig,
+                                                     predictor_vars = self.predictor_vars,
+                                                     target_vars = self.target_vars)
+        else:
+            print(f"Dataset for the current model was already computed. If it needs to be recomputed, set [current model].dataset=None and rerun .create_dataset()")
+        
         self.num_channels_in = np.shape(self.dataset[0][0])[0]
+        self.num_channels_out = np.shape(self.dataset[0][1])[0] #Don't forget to put this in SR_UNet_Simple model definition when targeting >1 var!!!
         return
 
     #########################################
