@@ -12,7 +12,7 @@ import pandas as pd
 import numpy as np
 import xarray as xr
 
-from HRRR_URMA_Datasets_AllVars import *
+from FunctionsAndClasses.HRRR_URMA_Datasets_AllVars import *
 
 ######################################################################################################################################################
 
@@ -52,10 +52,11 @@ class DefineModelAttributes():
         self.predictor_vars = predictor_vars
         self.target_vars = target_vars
 
-        self.savename = self.create_save_name()
+        self.create_save_name()
 
         self.dataset = None #call create_dataset() in whatever calling function needs it
         self.num_channels_in = None
+        self.num_channels_out = None
         
     ######################################### FUNCTIONS #########################################
     
@@ -68,7 +69,7 @@ class DefineModelAttributes():
             - Months IF NOT 1-12
             - Hours IF NOT all
             - Forecast lead time IF NOT 1
-            - Normalization scheme IF NOT all times
+            - Normalization scheme IF NOT "all times" (TO DO - though "all times" norm is so much better it should always be used...)
             - Terrains (tH, tU, tD)
             - Yearly/hourly time sigs (sY, sH)
             - Predictor variables, in parentheses, separated by dashes
@@ -100,16 +101,17 @@ class DefineModelAttributes():
         optional_str = "_".join([x for x in optional_str_list if x != ""])
         
         # Doesn't play nice if defined within the f-string
-        pred_str = "-".join(self.predictor_vars)
-        targ_str = "-".join(self.target_vars)
+        # Making as variables so these can be called independently for other plotting purposes (don't forget to add "pred" and "targ" in calling code!)
+        self.pred_str = "-".join(self.predictor_vars)
+        self.targ_str = "-".join(self.target_vars)
         
-        savename = f"BS{self.BATCH_SIZE}" \
-                   f"_NE{self.NUM_EPOCHS}" \
-                   f"_{optional_str}" \
-                   f"_pred({pred_str})" \
-                   f"_targ({targ_str})"
+        self.savename = f"BS{self.BATCH_SIZE}" \
+                        f"_NE{self.NUM_EPOCHS}" \
+                        f"_{optional_str}" \
+                        f"_pred({self.pred_str})" \
+                        f"_targ({self.targ_str})"
         
-        return savename
+        return 
 
     #########################################
 
@@ -119,6 +121,7 @@ class DefineModelAttributes():
 
         # Check if this was already done, to save duplicate computation
         if self.dataset is None:
+            print(f"Making dataset for model {self.savename}")
             self.dataset = HRRR_URMA_Dataset_AllVars(is_train = self.is_train,
                                                      months = self.months,  
                                                      hours = self.hours, 
@@ -129,8 +132,11 @@ class DefineModelAttributes():
                                                      with_hourly_time_sig = self.with_hourly_time_sig,
                                                      predictor_vars = self.predictor_vars,
                                                      target_vars = self.target_vars)
+            
+            # Returns a list of dt.datetime objects of all dates in the current dataset. Useful for plotting and time series stuff
+            self.dataset_date_list = [dt.datetime.strptime(str(np.datetime_as_string(date, unit='s')), "%Y-%m-%dT%H:%M:%S") for date in self.dataset.xr_datasets_pred[0].valid_time.data]
         else:
-            print(f"Dataset for the current model was already computed. If it needs to be recomputed, set [current model].dataset=None and rerun .create_dataset()")
+            print(f"Dataset for the model {self.savename} was already computed. If it needs to be recomputed, set [current model].dataset=None and rerun .create_dataset()")
         
         self.num_channels_in = np.shape(self.dataset[0][0])[0]
         self.num_channels_out = np.shape(self.dataset[0][1])[0] #Don't forget to put this in SR_UNet_Simple model definition when targeting >1 var!!!
@@ -162,4 +168,6 @@ class DefineModelAttributes():
                     self.target_vars = ((string.split("(")[1])[:-4]).split("-")
                 else:
                     self.target_vars = ((string.split("(")[1])[:-1]).split("-")
+        
+        self.create_save_name() #needs to be re-called to properly set attributes
         return

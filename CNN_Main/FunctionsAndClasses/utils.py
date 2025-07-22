@@ -12,15 +12,20 @@ import pandas as pd
 import numpy as np
 import xarray as xr
 
-from HRRR_URMA_Datasets_AllVars import *
-from SR_UNet_simple import SR_UNet_simple
-from DefineModelAttributes import DefineModelAttributes
-from utils import *
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from matplotlib.markers import MarkerStyle
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
 
+from FunctionsAndClasses.HRRR_URMA_Datasets_AllVars import *
+from FunctionsAndClasses.SR_UNet_simple import *
+from FunctionsAndClasses.DefineModelAttributes import *
+from FunctionsAndClasses.RMSELoss import *
 
 ######################################################################################################################################################
 
-def TrainOneModel(current_model, NUM_GPUS_TO_USE=3):
+def TrainOneModel(current_model, NUM_GPUS_TO_USE=3, loss_fcn="MAE"):
     """
     Fully trains one model, whose attributes have already been defined before being fed to this function
     Defaults to using the first 3 GPUs but this is tunable with input params
@@ -28,6 +33,7 @@ def TrainOneModel(current_model, NUM_GPUS_TO_USE=3):
     Inputs:
         - current_model = DefineModelAttributes object whose parameters have already been defined. Don't need to create a dataset beforehand, this function does that
         - NUM_GPUS_TO_USE = int, 1 to 4, for # GPUs to use with DataParallel
+        - loss_fcn = "MAE" or "RMSE" only currently
     """
     TRAINING_LOG_FILEPATH = "/scratch/RTMA/alex.schein/CNN_Main/Training_logs/training_log.txt"
     TRAINED_MODEL_SAVEPATH = "/scratch/RTMA/alex.schein/CNN_Main/Trained_models"
@@ -61,7 +67,14 @@ def TrainOneModel(current_model, NUM_GPUS_TO_USE=3):
     model.to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, betas=[0.5,0.999]) #torch.optim.Adam(model.parameters(), lr = 1e-3)
-    loss_function = torch.nn.L1Loss() #Might want to use L2 loss or RMSE... maybe revisit this
+    
+    if loss_fcn == "MAE":    
+        loss_function = torch.nn.L1Loss() #Might want to use L2 loss or RMSE... maybe revisit this
+    elif loss_fcn == "RMSE":
+        loss_function = RMSELoss()
+    else:
+        print(f"Must use ''MAE'' or ''RMSE'' for loss_fcn. Defaulting to MAE")
+        loss_function = torch.nn.L1Loss()
     lowest_loss = 999
 
     model.train()
@@ -140,9 +153,17 @@ def get_model_output_at_idx(model_attrs, model, pred_var="t2m", targ_var="t2m", 
         hour_idx = 0
     
     if is_unnormed:
-        pred = model_attrs.dataset.datasets_pred_normed_stddevs[model_attrs.predictor_vars.index(pred_var)][hour_idx]*pred[0,model_attrs.predictor_vars.index(pred_var),:] + model_attrs.dataset.datasets_pred_normed_means[model_attrs.predictor_vars.index(pred_var)][hour_idx]
-        targ = model_attrs.dataset.datasets_targ_normed_stddevs[model_attrs.target_vars.index(targ_var)][hour_idx]*targ + model_attrs.dataset.datasets_targ_normed_means[model_attrs.target_vars.index(targ_var)][hour_idx]
-        model_output = model_attrs.dataset.datasets_targ_normed_stddevs[model_attrs.target_vars.index(targ_var)][hour_idx]*model_output + model_attrs.dataset.datasets_targ_normed_means[model_attrs.target_vars.index(targ_var)][hour_idx]
+        pred = ( model_attrs.dataset.datasets_pred_normed_stddevs[model_attrs.predictor_vars.index(pred_var)][hour_idx]
+                 *pred[0,model_attrs.predictor_vars.index(pred_var),:] 
+                 + model_attrs.dataset.datasets_pred_normed_means[model_attrs.predictor_vars.index(pred_var)][hour_idx] )
+        
+        targ = ( model_attrs.dataset.datasets_targ_normed_stddevs[model_attrs.target_vars.index(targ_var)][hour_idx]
+                 *targ[model_attrs.target_vars.index(targ_var),:] #unlike pred and model_output, this should only ever have a single channel, so no need to prepend with 0 - honestly, is prepending with a new axis even needed for "pred" in the code above? Should test...
+                 + model_attrs.dataset.datasets_targ_normed_means[model_attrs.target_vars.index(targ_var)][hour_idx] )
+        
+        model_output = ( model_attrs.dataset.datasets_targ_normed_stddevs[model_attrs.target_vars.index(targ_var)][hour_idx]
+                         *model_output[0,model_attrs.target_vars.index(targ_var),:] 
+                         + model_attrs.dataset.datasets_targ_normed_means[model_attrs.target_vars.index(targ_var)][hour_idx] )
     else:
         pred = pred[0,model_attrs.predictor_vars.index(pred_var),:]
 
@@ -196,3 +217,53 @@ def plot_predictor_output_truth_error(X, pred, y, date_str="DATE", title="MODEL_
 
 ########################################################
 
+def rolling_avg(x, window_len):
+    return np.convolve(x, np.ones(window_len), 'valid') / window_len
+
+########################################################
+
+def plot_model_vs_smartinit_RMSE(model_attrs, statsobj_model, statsobj_smartinit, units_str="UNITS", to_save=False):
+    """
+    Inputs: 
+        - model_attrs = instance of DefineModelAttributes class for the current model
+        - statsobj_model = instance of StatObjectConstructor for the current model, with .CalcDomainAvgRMSEAllTimes() already done
+        - statsobj_smartinit = same but for smartinit
+        - units_str = string for the current variable's units.
+            - t2m & d2m --> deg C, pressurf --> Pa, u10m & v10m --> m/s
+        - to_save = bool to save fig or not
+    """
+    PLOT_SAVE_DIR = f"/scratch/RTMA/alex.schein/CNN_Main/Plots/f01/SmartinitComparisonPlots"
+    
+    rmse_diff = np.array(statsobj_smartinit.domain_avg_rmse_alltimes_list) - np.array(statsobj_model.domain_avg_rmse_alltimes_list)
+    model_title = f"pred={model_attrs.pred_str}, targ={model_attrs.targ_str}"
+
+    window_len = 24
+
+    fig, axes = plt.subplots(figsize=(12,6))
+    plt.plot(model_attrs.dataset_date_list, rmse_diff, 
+             ".", linestyle='None', markersize=0.5, color='g', alpha=0.5, label="RMSE diff.")
+    plt.plot(model_attrs.dataset_date_list[window_len-1:], rolling_avg(rmse_diff, window_len), 
+             linewidth=1, color="g", label=f"RMSE diff., {window_len}-hr mean")
+    plt.hlines(np.mean(rmse_diff), xmin=model_attrs.dataset_date_list[0], xmax=model_attrs.dataset_date_list[-1], 
+               color="r", linewidth=2, label=f"RMSE diff. 2024 mean ({np.mean(rmse_diff):.3f})")
+    plt.hlines(0, xmin=model_attrs.dataset_date_list[0], xmax=model_attrs.dataset_date_list[-1], linestyle='--', color="k", linewidth=2)
+    plt.xlim([model_attrs.dataset_date_list[0], model_attrs.dataset_date_list[-1]])
+    
+    axes.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%b'))
+    for label in axes.get_xticklabels(which='major'):
+        label.set(rotation=30, horizontalalignment='right')
+
+    plt.legend(loc="upper left")
+    
+    plt.ylabel(f"RMSE difference ({units_str})")
+    plt.xlabel("Date")
+    plt.title(f"{statsobj_smartinit.target_var} domain-average RMSE difference, Smartinit minus Model ({model_title}), 2024", fontsize=9)
+
+    if to_save:
+        fig_savename = f"RMSE_{statsobj_smartinit.target_var}_pred({model_attrs.pred_str})_targ({model_attrs.targ_str})"
+        plt.savefig(f"{PLOT_SAVE_DIR}/{fig_savename}.png",dpi=300, bbox_inches="tight")
+        print(f"{fig_savename} saved to {PLOT_SAVE_DIR}")
+    else:
+        plt.show()
+
+    return
