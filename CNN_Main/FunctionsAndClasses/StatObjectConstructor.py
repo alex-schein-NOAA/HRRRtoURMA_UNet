@@ -112,7 +112,7 @@ class ConstructStatObject():
                             print(f"{(i/NUM_HOURS)*100:.0f}% done (smartinit)")
 
                 else: #RMSE data already saved as csv - MUCH PREFERRED
-                    print(f"{self.target_var} RMSE data exists on disk")
+                    print(f"{self.target_var} RMSE data for Smartinit exists on disk")
                     with open(f"/scratch/RTMA/alex.schein/CNN_Main/Smartinit_stats/smartinit_RMSE_alltimes_{self.target_var}.csv", 'r', newline='') as file:
                         reader = csv.reader(file)
                         self.domain_avg_rmse_alltimes_list = [np.float32(x) for x in (list(reader))[0]]
@@ -126,14 +126,15 @@ class ConstructStatObject():
                 model = SR_UNet_simple(n_channels_in=self.current_model_attrs.num_channels_in, n_channels_out=self.current_model_attrs.num_channels_out)
                 device = torch.device("cuda")
                 model.to(device)
-                model.load_state_dict(torch.load(f"/scratch/RTMA/alex.schein/CNN_Main/Trained_models/{self.current_model_attrs.savename}.pt", weights_only=True))
-                
+                model.load_state_dict(torch.load(f"{self.trained_models_directory}/{self.current_model_attrs.savename}.pt", weights_only=True))
+
+                print(f"Calculating RMSE for all times ({self.target_var}, {self.current_model_attrs.savename})")
                 for i, urma_arr in enumerate(xr_urma.data):
                     _, _, model_output, _ = get_model_output_at_idx(self.current_model_attrs, model, pred_var=self.predictor_var, targ_var=self.target_var, idx=i)
                     self.domain_avg_rmse_alltimes_list.append(self.calc_domain_avg_RMSE_onetime(model_output, urma_arr))
-
+                    
                     if i%int(np.shape(xr_urma.data)[0]/20)==0:
-                        print(f"{(i/np.shape(xr_urma.data)[0])*100:.0f}% done (model)")
+                        print(f"{(i/np.shape(xr_urma.data)[0])*100:.0f}% done")
             
         return
 

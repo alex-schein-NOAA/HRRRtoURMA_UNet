@@ -25,7 +25,11 @@ from FunctionsAndClasses.RMSELoss import *
 
 ######################################################################################################################################################
 
-def TrainOneModel(current_model, NUM_GPUS_TO_USE=3, loss_fcn="MAE"):
+def TrainOneModel(current_model, 
+                  NUM_GPUS_TO_USE=3, 
+                  loss_fcn="MAE", 
+                  TRAINING_LOG_FILEPATH = "/scratch/RTMA/alex.schein/CNN_Main/Training_logs/training_log.txt",
+                  TRAINED_MODEL_SAVEPATH = "/scratch/RTMA/alex.schein/CNN_Main/Trained_models"):
     """
     Fully trains one model, whose attributes have already been defined before being fed to this function
     Defaults to using the first 3 GPUs but this is tunable with input params
@@ -34,10 +38,10 @@ def TrainOneModel(current_model, NUM_GPUS_TO_USE=3, loss_fcn="MAE"):
         - current_model = DefineModelAttributes object whose parameters have already been defined. Don't need to create a dataset beforehand, this function does that
         - NUM_GPUS_TO_USE = int, 1 to 4, for # GPUs to use with DataParallel
         - loss_fcn = "MAE" or "RMSE" only currently
+        - TRAINING_LOG_FILEPATH = filepath to save training log to - should generally not be changed unless training multiple models simultaneously
+        - TRAINED_MODEL_SAVEPATH = filepath to save trained models to - might need to differ if doing different losses, num epochs, etc
     """
-    TRAINING_LOG_FILEPATH = "/scratch/RTMA/alex.schein/CNN_Main/Training_logs/training_log.txt"
-    TRAINED_MODEL_SAVEPATH = "/scratch/RTMA/alex.schein/CNN_Main/Trained_models"
-
+    
     MULTIGPU_BATCH_SIZE = current_model.BATCH_SIZE*NUM_GPUS_TO_USE
 
     if not os.path.exists(f"/scratch/RTMA/alex.schein/CNN_Main/Trained_models/{current_model.savename}.pt"):
@@ -60,13 +64,12 @@ def TrainOneModel(current_model, NUM_GPUS_TO_USE=3, loss_fcn="MAE"):
         current_time = now.strftime("%Y-%m-%d %H:%M:%S")
         file.write(f"Data loaded | Current time = {current_time} \n")
     
-
     model = SR_UNet_simple(n_channels_in=current_model.num_channels_in, n_channels_out=current_model.num_channels_out)
     device = torch.device("cuda")
     model = nn.DataParallel(model, device_ids=[i for i in range(NUM_GPUS_TO_USE)])
     model.to(device)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, betas=[0.5,0.999]) #torch.optim.Adam(model.parameters(), lr = 1e-3)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, betas=[0.5,0.999])
     
     if loss_fcn == "MAE":    
         loss_function = torch.nn.L1Loss() #Might want to use L2 loss or RMSE... maybe revisit this
@@ -226,7 +229,7 @@ def plot_model_vs_smartinit_RMSE(model_attrs, statsobj_model, statsobj_smartinit
     """
     Inputs: 
         - model_attrs = instance of DefineModelAttributes class for the current model
-        - statsobj_model = instance of StatObjectConstructor for the current model, with .CalcDomainAvgRMSEAllTimes() already done
+        - statsobj_model = instance of StatObjectConstructor for the current model, with .calc_domain_avg_RMSE_alltimes() already done
         - statsobj_smartinit = same but for smartinit
         - units_str = string for the current variable's units.
             - t2m & d2m --> deg C, pressurf --> Pa, u10m & v10m --> m/s
@@ -235,7 +238,6 @@ def plot_model_vs_smartinit_RMSE(model_attrs, statsobj_model, statsobj_smartinit
     PLOT_SAVE_DIR = f"/scratch/RTMA/alex.schein/CNN_Main/Plots/f01/SmartinitComparisonPlots"
     
     rmse_diff = np.array(statsobj_smartinit.domain_avg_rmse_alltimes_list) - np.array(statsobj_model.domain_avg_rmse_alltimes_list)
-    model_title = f"pred={model_attrs.pred_str}, targ={model_attrs.targ_str}"
 
     window_len = 24
 
@@ -243,7 +245,7 @@ def plot_model_vs_smartinit_RMSE(model_attrs, statsobj_model, statsobj_smartinit
     plt.plot(model_attrs.dataset_date_list, rmse_diff, 
              ".", linestyle='None', markersize=0.5, color='g', alpha=0.5, label="RMSE diff.")
     plt.plot(model_attrs.dataset_date_list[window_len-1:], rolling_avg(rmse_diff, window_len), 
-             linewidth=1, color="g", label=f"RMSE diff., {window_len}-hr mean")
+             linewidth=1, color="g", label=f"RMSE diff., rolling {window_len}-hr mean")
     plt.hlines(np.mean(rmse_diff), xmin=model_attrs.dataset_date_list[0], xmax=model_attrs.dataset_date_list[-1], 
                color="r", linewidth=2, label=f"RMSE diff. 2024 mean ({np.mean(rmse_diff):.3f})")
     plt.hlines(0, xmin=model_attrs.dataset_date_list[0], xmax=model_attrs.dataset_date_list[-1], linestyle='--', color="k", linewidth=2)
@@ -257,10 +259,62 @@ def plot_model_vs_smartinit_RMSE(model_attrs, statsobj_model, statsobj_smartinit
     
     plt.ylabel(f"RMSE difference ({units_str})")
     plt.xlabel("Date")
-    plt.title(f"{statsobj_smartinit.target_var} domain-average RMSE difference, Smartinit minus Model ({model_title}), 2024", fontsize=9)
+    plt.title(f"{statsobj_smartinit.target_var} domain-average RMSE difference, Smartinit minus Model, 2024 \n \
+                Model = {model_attrs.savename}", fontsize=9)
 
     if to_save:
         fig_savename = f"RMSE_{statsobj_smartinit.target_var}_pred({model_attrs.pred_str})_targ({model_attrs.targ_str})"
+        plt.savefig(f"{PLOT_SAVE_DIR}/{fig_savename}.png",dpi=300, bbox_inches="tight")
+        print(f"{fig_savename} saved to {PLOT_SAVE_DIR}")
+    else:
+        plt.show()
+
+    return
+
+########################################################
+
+def plot_model_vs_model_RMSE(model_1_attrs, model_2_attrs, statsobj_model_1, statsobj_model_2, TARG_VAR, units_str="UNITS", to_save=False):
+    """
+    Inputs: 
+        - model_1_attrs = instance of DefineModelAttributes class for the first (baseline) model
+        - model_2_attrs =  instance of DefineModelAttributes class for the second (comparison) model
+        - statsobj_model_1 = instance of StatObjectConstructor for the first model, with .calc_domain_avg_RMSE_alltimes() already done
+        - statsobj_model_2 = same but for second model
+        - TARG_VAR = string of current target variable
+        - units_str = string for the current variable's units.
+            - t2m & d2m --> deg C, pressurf --> Pa, u10m & v10m --> m/s
+        - to_save = bool to save fig or not
+    """
+    PLOT_SAVE_DIR = f"/scratch/RTMA/alex.schein/CNN_Main/Plots/f01/ModelVsModelComparisonPlots"
+    
+    rmse_diff = np.array(statsobj_model_1.domain_avg_rmse_alltimes_list) - np.array(statsobj_model_2.domain_avg_rmse_alltimes_list)
+
+    window_len = 24
+
+    fig, axes = plt.subplots(figsize=(12,6))
+    plt.plot(model_1_attrs.dataset_date_list, rmse_diff, 
+             ".", linestyle='None', markersize=0.5, color='b', alpha=0.5, label="RMSE diff.")
+    plt.plot(model_1_attrs.dataset_date_list[window_len-1:], rolling_avg(rmse_diff, window_len), 
+             linewidth=1, color="b", label=f"RMSE diff., rolling {window_len}-hr mean")
+    plt.hlines(np.mean(rmse_diff), xmin=model_1_attrs.dataset_date_list[0], xmax=model_1_attrs.dataset_date_list[-1], 
+               color="r", linewidth=2, label=f"RMSE diff. 2024 mean ({np.mean(rmse_diff):.3f})")
+    plt.hlines(0, xmin=model_1_attrs.dataset_date_list[0], xmax=model_1_attrs.dataset_date_list[-1], linestyle='--', color="k", linewidth=2)
+    plt.xlim([model_1_attrs.dataset_date_list[0], model_1_attrs.dataset_date_list[-1]])
+    
+    axes.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%b'))
+    for label in axes.get_xticklabels(which='major'):
+        label.set(rotation=30, horizontalalignment='right')
+
+    plt.legend(loc="upper left")
+    
+    plt.ylabel(f"RMSE difference ({units_str})")
+    plt.xlabel("Date")
+    plt.title(f"{TARG_VAR} domain-average RMSE difference, Model 1 minus Model 2, 2024 \n \
+                Model 1 = {model_1_attrs.savename} \n \
+                Model 2 = {model_2_attrs.savename}", fontsize=9)
+
+    if to_save:
+        fig_savename = f"RMSE_{TARG_VAR}_model1(pred({model_1_attrs.pred_str})_targ({model_1_attrs.targ_str}))_model2(pred({model_2_attrs.pred_str})_targ({model_2_attrs.targ_str}))"
         plt.savefig(f"{PLOT_SAVE_DIR}/{fig_savename}.png",dpi=300, bbox_inches="tight")
         print(f"{fig_savename} saved to {PLOT_SAVE_DIR}")
     else:
