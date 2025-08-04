@@ -13,6 +13,13 @@ import time
 ####################################################
 
 def restrict_files(START_DATE, END_DATE, FORECAST_LEAD_HOURS, PATH_ORIGINAL, PATH_NEW, IDX_MIN_LON=596, IDX_MIN_LAT=645, IMG_SIZE_LON=180, IMG_SIZE_LAT=180):
+    ## DEFAULT INDEXES AND IMG SIZES ARE FOR OLD DOMAIN!! Keeping as a record though
+    ## New domain is based on URMA grid indexing:
+    # IDX_MIN_LON = 250
+    # IDX_MIN_LAT = 400
+    # IMG_SIZE_LON = 800
+    # IMG_SIZE_LAT = 800
+
     NUM_HOURS = int((END_DATE-START_DATE).total_seconds()/3600) #surprisingly no built in hours function...
     for i in range(NUM_HOURS+1):
         DATE_STR = dt.date.strftime(START_DATE + dt.timedelta(hours=i), "%Y%m%d")
@@ -33,9 +40,14 @@ var_select_dict = {"t2m":r"TMP:2 m",
                    "pressurf":r"PRES:surface",
                    "u10m":r"UGRD:10 m",
                    "v10m":r"VGRD:10 m"}
-                   
-                   
-for var_string in list(var_select_dict.keys())[3:]: #list(var_select_dict.keys()): #(7/1) Waiting for U and V to finish regridding, then can run this to completion
+
+# (7/28) New domain indices
+IDX_MIN_LON = 250
+IDX_MIN_LAT = 400
+IMG_SIZE_LON = 800
+IMG_SIZE_LAT = 800
+
+for var_string in ["spfh2m"]: #list(var_select_dict.keys()): #(8/1) Running on spfh2m
 
     PATH_HRRR_ORIGINAL = f"/data1/projects/RTMA/alex.schein/Regridded_HRRR/{var_string}"
     PATH_TRAIN = f"/data1/projects/RTMA/alex.schein/Regridded_HRRR_train_test/LOOSE_FILES/train_spatiallyrestricted_f01/{var_string}"
@@ -54,10 +66,18 @@ for var_string in list(var_select_dict.keys())[3:]: #list(var_select_dict.keys()
                    END_DATE=END_DATE_TRAIN, 
                    FORECAST_LEAD_HOURS=FORECAST_LEAD_HOURS,
                    PATH_ORIGINAL=PATH_HRRR_ORIGINAL,
-                   PATH_NEW=PATH_TRAIN)
+                   PATH_NEW=PATH_TRAIN, 
+                   IDX_MIN_LAT=IDX_MIN_LAT, 
+                   IDX_MIN_LON=IDX_MIN_LON,
+                   IMG_SIZE_LAT=IMG_SIZE_LAT,
+                   IMG_SIZE_LON=IMG_SIZE_LON)
     
     restrict_files(START_DATE=START_DATE_TEST,
                    END_DATE=END_DATE_TEST, 
                    FORECAST_LEAD_HOURS=FORECAST_LEAD_HOURS,
                    PATH_ORIGINAL=PATH_HRRR_ORIGINAL,
-                   PATH_NEW=PATH_TEST)
+                   PATH_NEW=PATH_TEST,
+                   IDX_MIN_LAT=IDX_MIN_LAT, 
+                   IDX_MIN_LON=IDX_MIN_LON,
+                   IMG_SIZE_LAT=IMG_SIZE_LAT,
+                   IMG_SIZE_LON=IMG_SIZE_LON)

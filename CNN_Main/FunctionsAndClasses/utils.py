@@ -99,7 +99,7 @@ def TrainOneModel(current_model,
     
             epoch_loss += loss.item()
             
-        end2 = time.time() 
+        end = time.time() 
         
         if epoch_loss <= lowest_loss: #only save models that have lower loss than previous best
             lowest_loss = epoch_loss
@@ -108,7 +108,7 @@ def TrainOneModel(current_model,
         
         # write log at every interval so we can read back all the history if needed
         with open(TRAINING_LOG_FILEPATH, "a") as file: 
-            file.write(f"End of epoch {epoch} | Average loss for epoch = {epoch_loss/len(current_model_dataloader):.5f} | Time for epoch = {end2-start:.1f} sec \n")
+            file.write(f"End of epoch {epoch} | Average loss for epoch = {epoch_loss/len(current_model_dataloader):.5f} | Time for epoch = {end-start:.1f} sec \n")
     
     with open(TRAINING_LOG_FILEPATH, "a") as file: 
         now = dt.datetime.now()
@@ -137,7 +137,7 @@ def get_model_output_at_idx(model_attrs, model, pred_var="t2m", targ_var="t2m", 
         - predictor @ index, UNNORMED if is_unnormed
         - target @ index, UNNORMED if is_unnormed
         - model output @ index, UNNORMED if is_unnormed
-        - dt_current as string, for plot title purposes
+        - dt_current as dt.datetime object, for plot title purposes
     """
     pred,targ = model_attrs.dataset[idx]
     pred = pred[np.newaxis,:] 
@@ -164,13 +164,69 @@ def get_model_output_at_idx(model_attrs, model, pred_var="t2m", targ_var="t2m", 
                  *targ[model_attrs.target_vars.index(targ_var),:] #unlike pred and model_output, this should only ever have a single channel, so no need to prepend with 0 - honestly, is prepending with a new axis even needed for "pred" in the code above? Should test...
                  + model_attrs.dataset.datasets_targ_normed_means[model_attrs.target_vars.index(targ_var)][hour_idx] )
         
+        ### (8/1) Normalization based on 7/31 tag-up meeting: try normalizing w.r.t mean/stddev of predictor, not target
+        # Hurts model performance vs Smartinit!
+        # Models are trained to emulate URMA-normalized data so that mean/stddev should apply to model output (i.e. models transform from HRRR-normalized space to URMA-normalized space
+        # In practice, computing climatological mean and stddev of URMA is not hard and model output can be denormalized w.r.t these quantities without much 
         model_output = ( model_attrs.dataset.datasets_targ_normed_stddevs[model_attrs.target_vars.index(targ_var)][hour_idx]
                          *model_output[0,model_attrs.target_vars.index(targ_var),:] 
                          + model_attrs.dataset.datasets_targ_normed_means[model_attrs.target_vars.index(targ_var)][hour_idx] )
+
+        # model_output = ( model_attrs.dataset.datasets_pred_normed_stddevs[model_attrs.predictor_vars.index(targ_var)][hour_idx]
+        #                  *model_output[0,model_attrs.target_vars.index(targ_var),:] #this still needs to be target_vars for indexing
+        #                  + model_attrs.dataset.datasets_pred_normed_means[model_attrs.predictor_vars.index(targ_var)][hour_idx] )
     else:
         pred = pred[0,model_attrs.predictor_vars.index(pred_var),:]
 
     return pred, targ, model_output, dt_current
+
+########################################################
+
+def get_smartinit_output_at_idx(i, 
+                                START_DATE, 
+                                FORECAST_LEAD_HOURS, 
+                                smartinit_var_select_dict, 
+                                varname_translation_dict, 
+                                target_var, 
+                                IDX_MIN_LON=596,
+                                IDX_MIN_LAT=645,
+                                IMG_SIZE_LON=180,
+                                IMG_SIZE_LAT=180):
+    """
+    Method to open one Smartinit file and return its output for one variable, restricted to whatever spatial domain we define (default: Colorado domain).
+    Designed for StatObjectConstructor but can be called from anywhere else that Smartinit output is needed.
+
+    Inputs:
+        - i = int of index to select. Should line up with sample_idx indexing from HRRR
+        - START_DATE = dt.datetime object. Currently (as of 7/29) only have Smartinit data for 2024, so this should be 2023/12/31 23z or later. 
+            - VERY IMPORTANT: calling function should have START_DATE = dt.datetime([20240101_00z or greater])-dt.timedelta(hours=FORECAST_LEAD_HOURS) !!!
+        - FORECAST_LEAD_HOURS = int of forecast lead time. Should already have offset START_DATE as detailed previously
+        - smartinit_var_select_dict = as in StatObjectConstructor
+        - varname_translation_dict = as in StatObjectConstructor
+        - target_var = string of a valid target variable, e.g. "t2m"
+        - IDXs and IMG_SIZEs = define region as usual. Should be the same as whatever model domain being compared against.
+
+    Outputs:
+        - xarray object of the smartinit, sliced down to the variable and domain of interest.
+            - Returns everything, not just data, so calling function should invoke .data if that's what's desired
+    """
+
+    smartinit_directory = f"/data1/projects/RTMA/alex.schein/HRRR_Smartinit_Data"
+    
+    DATE_STR = dt.date.strftime(START_DATE + dt.timedelta(hours=i), "%Y%m%d")
+    file_to_open = f"{smartinit_directory}/hrrr_smartinit_{DATE_STR}_t{str((START_DATE.hour+i)%24).zfill(2)}z_f{str(FORECAST_LEAD_HOURS).zfill(2)}.grib2"
+    xr_smartinit = xr.open_dataset(file_to_open,
+                                   engine="cfgrib", 
+                                   backend_kwargs=smartinit_var_select_dict[varname_translation_dict[target_var]],
+                                   decode_timedelta=True)
+    xr_smartinit = xr_smartinit[varname_translation_dict[target_var]]
+    xr_smartinit = xr_smartinit.isel(y=slice(IDX_MIN_LAT, IDX_MIN_LAT+IMG_SIZE_LAT),
+                                     x=slice(IDX_MIN_LON, IDX_MIN_LON+IMG_SIZE_LON))
+    
+    return xr_smartinit
+
+    
+
 
 ########################################################
 
@@ -225,7 +281,12 @@ def rolling_avg(x, window_len):
 
 ########################################################
 
-def plot_model_vs_smartinit_RMSE(model_attrs, statsobj_model, statsobj_smartinit, units_str="UNITS", to_save=False):
+def plot_model_vs_smartinit_RMSE(model_attrs, 
+                                 statsobj_model, 
+                                 statsobj_smartinit, 
+                                 units_str="UNITS", 
+                                 to_save=False, 
+                                 PLOT_SAVE_DIR = f"/scratch/RTMA/alex.schein/CNN_Main/Plots/f01/SmartinitComparisonPlots"):
     """
     Inputs: 
         - model_attrs = instance of DefineModelAttributes class for the current model
@@ -234,8 +295,9 @@ def plot_model_vs_smartinit_RMSE(model_attrs, statsobj_model, statsobj_smartinit
         - units_str = string for the current variable's units.
             - t2m & d2m --> deg C, pressurf --> Pa, u10m & v10m --> m/s
         - to_save = bool to save fig or not
+        - PLOT_SAVE_DIR = full directory path of where to save plots if to_save=True
     """
-    PLOT_SAVE_DIR = f"/scratch/RTMA/alex.schein/CNN_Main/Plots/f01/SmartinitComparisonPlots"
+    
     
     rmse_diff = np.array(statsobj_smartinit.domain_avg_rmse_alltimes_list) - np.array(statsobj_model.domain_avg_rmse_alltimes_list)
 
@@ -273,7 +335,14 @@ def plot_model_vs_smartinit_RMSE(model_attrs, statsobj_model, statsobj_smartinit
 
 ########################################################
 
-def plot_model_vs_model_RMSE(model_1_attrs, model_2_attrs, statsobj_model_1, statsobj_model_2, TARG_VAR, units_str="UNITS", to_save=False):
+def plot_model_vs_model_RMSE(model_1_attrs, 
+                             model_2_attrs, 
+                             statsobj_model_1, 
+                             statsobj_model_2, 
+                             TARG_VAR, 
+                             units_str="UNITS", 
+                             to_save=False, 
+                             PLOT_SAVE_DIR = f"/scratch/RTMA/alex.schein/CNN_Main/Plots/f01/ModelVsModelComparisonPlots"):
     """
     Inputs: 
         - model_1_attrs = instance of DefineModelAttributes class for the first (baseline) model
@@ -284,8 +353,13 @@ def plot_model_vs_model_RMSE(model_1_attrs, model_2_attrs, statsobj_model_1, sta
         - units_str = string for the current variable's units.
             - t2m & d2m --> deg C, pressurf --> Pa, u10m & v10m --> m/s
         - to_save = bool to save fig or not
+        - PLOT_SAVE_DIR = full directory path of where to save plots if to_save=True. Switch to subdirectory below on if at least one of the models was trained on RMSE loss 
     """
-    PLOT_SAVE_DIR = f"/scratch/RTMA/alex.schein/CNN_Main/Plots/f01/ModelVsModelComparisonPlots"
+
+    if ("RMSE" in model_1_attrs.savename) or ("RMSE" in model_2_attrs.savename):
+        PLOT_SAVE_DIR = f"{PLOT_SAVE_DIR}/RMSE_Loss"
+    else:
+        PLOT_SAVE_DIR = f"{PLOT_SAVE_DIR}/MAE_Loss"
     
     rmse_diff = np.array(statsobj_model_1.domain_avg_rmse_alltimes_list) - np.array(statsobj_model_2.domain_avg_rmse_alltimes_list)
 
@@ -314,7 +388,7 @@ def plot_model_vs_model_RMSE(model_1_attrs, model_2_attrs, statsobj_model_1, sta
                 Model 2 = {model_2_attrs.savename}", fontsize=9)
 
     if to_save:
-        fig_savename = f"RMSE_{TARG_VAR}_model1(pred({model_1_attrs.pred_str})_targ({model_1_attrs.targ_str}))_model2(pred({model_2_attrs.pred_str})_targ({model_2_attrs.targ_str}))"
+        fig_savename = f"RMSE_{TARG_VAR}_model1({model_1_attrs.savename})_model2({model_2_attrs.savename})"
         plt.savefig(f"{PLOT_SAVE_DIR}/{fig_savename}.png",dpi=300, bbox_inches="tight")
         print(f"{fig_savename} saved to {PLOT_SAVE_DIR}")
     else:

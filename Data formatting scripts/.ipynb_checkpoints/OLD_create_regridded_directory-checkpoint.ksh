@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Paths relative to wrfruc/aschein directory
+#PARENT_PATH=$PWD
+HRRR_PATH=Herbie_downloads/hrrr
+REGRID_PATH=Regridded_HRRR
+
+##### MAKE REGRID DIRECTORY #####
+cd ${HRRR_PATH}
+for filename in *  
+do
+	cd ${filename} #now working in Herbie_downloads/hrrr/[currentdate]
+	echo ${PWD}
+	yyyymmdd=${PWD##*/} #nab the yyyymmdd folder name
+	cd ../../.. #go back up to aschein
+	mkdir -p ${REGRID_PATH}/${yyyymmdd} #make corresponding folder in regrid path, if doesn't exist
+	cd ${HRRR_PATH} #return to start
+done

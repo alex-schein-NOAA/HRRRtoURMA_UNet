@@ -11,26 +11,34 @@ import time
 
 ############################################
 
-IDX_MIN_LON = 796 
-IDX_MIN_LAT = 645 
+# IDX_MIN_LON = 796 
+# IDX_MIN_LAT = 645 
 
-IMG_SIZE_LON = 180
-IMG_SIZE_LAT = 180
+# IMG_SIZE_LON = 180
+# IMG_SIZE_LAT = 180
+
+IDX_MIN_LON = 250
+IDX_MIN_LAT = 400 
+
+IMG_SIZE_LON = 800
+IMG_SIZE_LAT = 800
 
 TIME_LIST = [str(i).zfill(2) for i in range(24)] 
 
-PATH_URMA_ORIGINAL = "/data1/ai-datadepot/models/urma/2p5km/grib2"
+PATH_URMA_ORIGINAL = "/data1/projects/RTMA/alex.schein/Regridded_URMA"
 
 #Translates from HRRR var names to URMA; files directory structure uses the HRRR format but need to use URMA to select data
-varname_translation_dict = {"t2m":"t2m",
+varname_translation_dict = {"pressurf":"sp",
+                            "t2m":"t2m",
                             "d2m":"d2m",
-                            "pressurf":"sp",
+                            "spfh2m":"sh2",
                             "u10m":"u10",
                             "v10m":"v10"}
 
-urma_var_select_dict = {"t2m":{'filter_by_keys':{'typeOfLevel': 'heightAboveGround','level':2}}, 
-                        "d2m":{'filter_by_keys':{'typeOfLevel': 'heightAboveGround','level':2}}, 
-                        "sp":"",
+urma_var_select_dict = {"sp":{'filter_by_keys':{'typeOfLevel': 'surface'}},
+                        "t2m":{'filter_by_keys':{'typeOfLevel': 'heightAboveGround','level':2}}, 
+                        "d2m":{'filter_by_keys':{'typeOfLevel': 'heightAboveGround','level':2}},
+                        "sh2":{'filter_by_keys':{'typeOfLevel': 'heightAboveGround','level':2}},
                         "u10":{'filter_by_keys':{'typeOfLevel': 'heightAboveGround','level':10}},
                         "v10":{'filter_by_keys':{'typeOfLevel': 'heightAboveGround','level':10}}}
 
@@ -62,10 +70,10 @@ def restrict_files(START_DATE, END_DATE, TIME_LIST, PATH_ORIGINAL, PATH_NEW, var
                 var_subset = var.isel(y=slice(IDX_MIN_LAT, IDX_MIN_LAT+IMG_SIZE_LAT),
                                       x=slice(IDX_MIN_LON, IDX_MIN_LON+IMG_SIZE_LON))
                 var_subset.to_netcdf(f"{PATH_NEW}/{new_filename}")
-                with open(f"/scratch/RTMA/alex.schein/tmp_dump.txt",'a') as file: #CHANGE FILEPATH AS NEEDED 
-                    file.write(f"{new_filename} written to {PATH_NEW} \n")
-            else:
-                foo=1
+                print(f"{new_filename} written to {PATH_NEW}")
+                # with open(f"/scratch/RTMA/alex.schein/tmp_dump.txt",'a') as file: #CHANGE FILEPATH AS NEEDED 
+                    # file.write(f"{new_filename} written to {PATH_NEW} \n")
+            # else:
                 #with open(f"/scratch/RTMA/alex.schein/tmp_dump.txt",'a') as file: #CHANGE FILEPATH AS NEEDED
                 #    file.write(f"{new_filename} already exists in {PATH_NEW}. No action taken \n")
 
@@ -73,7 +81,7 @@ def restrict_files(START_DATE, END_DATE, TIME_LIST, PATH_ORIGINAL, PATH_NEW, var
 
 #############################
     
-for var_string in list(varname_translation_dict.keys())[1:]: #don't need t2m right now, but change this if we do later
+for var_string in list(varname_translation_dict.keys()): #(7/30) doing all vars
 
     PATH_URMA_TRAIN = f"/data1/projects/RTMA/alex.schein/URMA_train_test/LOOSE_FILES/train/{var_string}"
     PATH_URMA_TEST = f"/data1/projects/RTMA/alex.schein/URMA_train_test/LOOSE_FILES/test/{var_string}"
@@ -83,13 +91,21 @@ for var_string in list(varname_translation_dict.keys())[1:]: #don't need t2m rig
                    TIME_LIST=TIME_LIST,
                    PATH_ORIGINAL=PATH_URMA_ORIGINAL,
                    PATH_NEW=PATH_URMA_TRAIN,
-                   var_string=var_string)
+                   var_string=var_string, 
+                   IDX_MIN_LAT=IDX_MIN_LAT,
+                   IDX_MIN_LON=IDX_MIN_LON, 
+                   IMG_SIZE_LAT=IMG_SIZE_LAT, 
+                   IMG_SIZE_LON=IMG_SIZE_LON)
 
     restrict_files(START_DATE=START_DATE_TEST,
                    END_DATE=END_DATE_TEST, 
                    TIME_LIST=TIME_LIST,
                    PATH_ORIGINAL=PATH_URMA_ORIGINAL,
                    PATH_NEW=PATH_URMA_TEST,
-                   var_string=var_string)
+                   var_string=var_string, 
+                   IDX_MIN_LAT=IDX_MIN_LAT,
+                   IDX_MIN_LON=IDX_MIN_LON, 
+                   IMG_SIZE_LAT=IMG_SIZE_LAT, 
+                   IMG_SIZE_LON=IMG_SIZE_LON)
 
     

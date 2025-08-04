@@ -23,10 +23,10 @@ END_DATE = date(2024,12,31) #should be dec 31, 2024
 NUM_DAYS = END_DATE-START_DATE
 
 
-#download 2020/12/31 23z manually
-H = Herbie(f"2020-12-31 23:00", model="hrrr", fxx=1, product="nat", save_dir=PATH_TO_DOWNLOAD_TO, verbose=False)
+#download 2023/12/31 23z manually
+H = Herbie(f"2023-12-31 23:00", model="hrrr", fxx=1, product="nat", save_dir=PATH_TO_DOWNLOAD_TO, verbose=False)
 H.download()
-print(f"Done | 2020-12-31 23:00 | fxx={FORECAST_TIME}")
+print(f"Done | 2023-12-31 23:00 | fxx={FORECAST_TIME}")
 
 for i in range(NUM_DAYS.days + 1):
     DATE_STR = date.strftime(START_DATE + timedelta(days=i), "%Y-%m-%d")
