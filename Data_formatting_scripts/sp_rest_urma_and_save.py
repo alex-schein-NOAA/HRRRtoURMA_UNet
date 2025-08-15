@@ -53,6 +53,7 @@ NUM_DAYS_TEST = END_DATE_TEST-START_DATE_TEST
 #############################
 
 def restrict_files(START_DATE, END_DATE, TIME_LIST, PATH_ORIGINAL, PATH_NEW, var_string, IDX_MIN_LON=796, IDX_MIN_LAT=645, IMG_SIZE_LON=180, IMG_SIZE_LAT=180):
+    ## DEFAULT INDEXES AND IMG SIZES ARE FOR OLD DOMAIN!! Keeping as a record though
     NUM_DAYS = END_DATE-START_DATE
     for i in range(NUM_DAYS.days+1):
         DATE_STR = date.strftime(START_DATE + timedelta(days=i), "%Y%m%d")
